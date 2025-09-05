@@ -1,7 +1,7 @@
 name: Sync Chrome Plus Release
 on:
   schedule:
-    - cron: '0 5 * * *'  # Chạy mỗi ngày
+    - cron: '0 * * * *'  # Chạy mỗi giờ
   workflow_dispatch:
 
 jobs:
