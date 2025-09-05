@@ -1,0 +1,64 @@
+name: Sync Chrome Plus Release
+on:
+  schedule:
+    - cron: '0 * * * *'  # Chạy mỗi giờ
+  workflow_dispatch:
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Get latest release from source
+      id: source_release
+      run: |
+        # Kiểm tra có release không
+        if ! curl -s https://api.github.com/repos/Bush2021/chrome_plus/releases/latest | jq -e '.tag_name' > /dev/null; then
+          echo "No release found in source repo"
+          echo "skip=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        SOURCE_TAG=$(curl -s https://api.github.com/repos/Bush2021/chrome_plus/releases/latest | jq -r '.tag_name')
+        echo "tag=$SOURCE_TAG" >> $GITHUB_OUTPUT
+        echo "skip=false" >> $GITHUB_OUTPUT
+    
+    - name: Check if release exists
+      if: steps.source_release.outputs.skip != 'true'
+      id: check_release
+      run: |
+        TAG="${{ steps.source_release.outputs.tag }}"
+        if gh release view "$TAG" > /dev/null 2>&1; then
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        GH_TOKEN: ${{ github.token }}
+    
+    - name: Download and create release
+      if: steps.source_release.outputs.skip != 'true' && steps.check_release.outputs.exists == 'false'
+      run: |
+        TAG="${{ steps.source_release.outputs.tag }}"
+        
+        RELEASE_DATA=$(curl -s https://api.github.com/repos/Bush2021/chrome_plus/releases/latest)
+        RELEASE_NAME=$(echo "$RELEASE_DATA" | jq -r '.name')
+        RELEASE_BODY=$(echo "$RELEASE_DATA" | jq -r '.body')
+        
+        gh release create "$TAG" --title "$RELEASE_NAME" --notes "$RELEASE_BODY"
+        
+        # Download assets nếu có
+        echo "$RELEASE_DATA" | jq -r '.assets[]?.browser_download_url' | while read url; do
+          if [ "$url" != "null" ] && [ -n "$url" ]; then
+            filename=$(basename "$url")
+            curl -L -o "$filename" "$url"
+            gh release upload "$TAG" "$filename"
+          fi
+        done
+      env:
+        GH_TOKEN: ${{ github.token }}
